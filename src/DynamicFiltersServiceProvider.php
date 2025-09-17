@@ -14,6 +14,10 @@ class DynamicFiltersServiceProvider extends ServiceProvider
     {
         $this->publishes([
             __DIR__.'/../config/dynamic-filters.php' => config_path('dynamic-filters.php'),
+        ], 'dynamic-filters-config');
+
+        $this->publishes([
+            __DIR__.'/../config/dynamic-filters.php' => config_path('dynamic-filters.php'),
         ], 'config');
     }
 
