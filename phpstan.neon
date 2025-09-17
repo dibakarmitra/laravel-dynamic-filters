@@ -1,0 +1,25 @@
+includes:
+    - vendor/nunomaduro/larastan/extension.neon
+
+parameters:
+    level: 8
+    paths:
+        - src
+        - tests
+    
+    # Ignore errors related to unknown classes in the global namespace
+    ignoreErrors:
+        - '#Class Illuminate\\[A-Za-z0-9_\\]+ not found#'
+        - '#Class or interface Illuminate\\[A-Za-z0-9_\\]+ not found#'
+        - '#Access to an undefined property Illuminate\\[A-Za-z0-9_\\]+::\$[a-zA-Z0-9_]+#'
+    
+    # Laravel specific configuration
+    excludes_analyse:
+        - '*/tests/*'
+    
+    # Laravel container bindings
+    container: 'vendor/compiled.php'
+    
+    # Laravel facades
+    facadeRoots:
+        - 'src/Facades'

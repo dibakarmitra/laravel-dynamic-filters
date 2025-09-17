@@ -1,0 +1,77 @@
+name: Run Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        php: [8.2, 8.3]
+        laravel: [^10.0, ^11.0, ^12.0]
+        dependency-version: [prefer-stable]
+        include:
+          - laravel: ^10.0
+            testbench: ^8.0
+          - laravel: ^11.0
+            testbench: ^9.0
+          - laravel: ^12.0
+            testbench: ^10.0
+        exclude:
+          - php: 8.2
+            laravel: ^12.0
+          - php: 8.2
+            laravel: ^11.0
+
+    name: P${{ matrix.php }} - L${{ matrix.laravel }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, xml
+          coverage: none
+
+      - name: Install Dependencies
+        run: |
+          composer require "laravel/framework:${{ matrix.laravel }}" --no-update
+          composer require "orchestra/testbench:${{ matrix.testbench }}" --dev --no-update
+          composer update --prefer-dist --no-progress --prefer-stable
+
+      - name: Execute tests
+        run: vendor/bin/phpunit --coverage-clover=coverage.xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          file: coverage.xml
+          fail_ci_if_error: false
+
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.2
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, xml
+
+      - name: Install Dependencies
+        run: |
+          composer install --prefer-dist --no-progress --prefer-stable
+
+      - name: Run PHPStan
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
