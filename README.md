@@ -44,7 +44,7 @@ php artisan vendor:publish --tag=dynamic-filters-config
 
 This will create a `dynamic-filters.php` file in your `config` directory where you can customize the package behavior.
 
-### Service Provider (Laravel < 5.5)
+### Service Provider
 
 For Laravel versions that don't support package auto-discovery, register the service provider in `config/app.php`:
 
