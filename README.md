@@ -514,12 +514,6 @@ You can also define a global whitelist in the config file that applies to all mo
 ],
 ```
 
-## Testing
-
-```bash
-composer test
-```
-
 ## Changelog
 
 Please see [CHANGELOG](CHANGELOG.md) for more information on what has changed recently.
