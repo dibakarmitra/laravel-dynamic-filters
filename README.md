@@ -5,7 +5,6 @@
 [![License](https://img.shields.io/github/license/dibakar/laravel-dynamic-filters?style=flat-square)](https://github.com/dibakar/laravel-dynamic-filters)
 [![PHP Version](https://img.shields.io/packagist/php-v/dibakar/laravel-dynamic-filters?style=flat-square)](https://php.net/)
 [![Laravel Version](https://img.shields.io/badge/Laravel-10.x+-orange?style=flat-square)](https://laravel.com/)
-[![Tests](https://github.com/dibakar/laravel-dynamic-filters/actions/workflows/tests.yml/badge.svg)](https://github.com/dibakar/laravel-dynamic-filters/actions/workflows/tests.yml)
 
 A flexible and powerful filtering system for Laravel Eloquent models. This package allows you to easily add dynamic filtering, searching, and sorting to your Laravel applications with minimal configuration.
 
