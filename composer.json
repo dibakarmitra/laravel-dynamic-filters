@@ -1,13 +1,13 @@
 {
     "name": "dibakar/laravel-dynamic-filters",
-    "description": "A flexible filtering system for Laravel Eloquent models",
-    "version": "1.0.0",
+    "description": "A flexible and dynamic filtering system for Laravel Eloquent models that allows for easy implementation of complex filtering and searching capabilities in your applications.",
+    "keywords": ["laravel", "filtering", "searching", "eloquent", "dynamic filters", "filters"],
     "type": "library",
     "license": "MIT",
     "authors": [
         {
-            "name": "Dibakar",
-            "email": "dibakar@example.com"
+            "name": "Dibakar Mitra",
+            "email": "mitradibakar@outlook.com"
         }
     ],
     "require": {
@@ -16,9 +16,7 @@
         "illuminate/database": "^10.0|^11.0|^12.0"
     },
     "require-dev": {
-        "orchestra/testbench": "^8.0|^9.0|^10.0",
-        "phpunit/phpunit": "^10.0",
-        "phpstan/phpstan": "^1.10"
+        "orchestra/testbench": "^8.0|^9.0|^10.0"
     },
     "autoload": {
         "psr-4": {
@@ -40,6 +38,17 @@
             }
         }
     },
-    "minimum-stability": "dev",
-    "prefer-stable": true
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true,
+        "preferred-install": "dist"
+    },
+    "version": "1.0.0",
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/dibakarmitra/laravel-dynamic-filters"
+        }
+    ]
 }
