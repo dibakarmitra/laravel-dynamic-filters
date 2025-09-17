@@ -17,14 +17,13 @@ A flexible and powerful filtering system for Laravel Eloquent models. This packa
 - **Type Safety**: Strict type checking and value casting with proper validation
 - **Performance Optimized**: Efficient query building with minimal overhead
 - **Extensible**: Easy to extend with custom filters and search logic
-- **Comprehensive Testing**: Thoroughly tested with PHPUnit
 - **Modern PHP**: Built with PHP 8.1+ features and type hints
 - **Laravel Integration**: Seamless integration with Laravel's Eloquent ORM
 
 ## 🚀 Installation
 
 ### Requirements
-- PHP 8.2 or higher
+- PHP 8.1 or higher
 - Laravel 10.x or later
 
 ### Install via Composer
