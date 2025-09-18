@@ -1,11 +1,15 @@
 # Laravel Dynamic Filters - API Documentation
 
+A powerful Laravel package for dynamic filtering, searching, and sorting of Eloquent models with support for relationships, custom filters, and more.
+
 ## Table of Contents
 - [Installation](#installation)
 - [Basic Usage](#basic-usage)
+- [Configuration](#configuration)
 - [Facade Methods](#facade-methods)
   - [Filtering](#filtering-methods)
   - [Search](#search-methods)
+  - [Sorting](#sorting-methods)
   - [Configuration](#configuration-methods)
 - [Filter Types](#filter-types)
   - [Basic Filtering](#basic-filtering)
@@ -19,11 +23,14 @@
   - [Relationship Filtering](#relationship-filtering)
   - [Filter Presets](#filter-presets)
   - [Pagination](#pagination)
+  - [Security](#security)
 - [Example Filters](#example-filters)
   - [Date Range Filter](#date-range-filter)
   - [Tag Filter](#tag-filter)
   - [Full-Text Search](#full-text-search)
   - [Published in Last X Days](#published-in-last-x-days)
+- [Error Handling](#error-handling)
+- [Performance Tips](#performance-tips)
 
 ## Installation
 
@@ -31,15 +38,25 @@
 composer require dibakar/laravel-dynamic-filters
 ```
 
-Publish the configuration file:
+### Publish Configuration (Optional)
+
+Publish the configuration file to customize the package behavior:
 
 ```bash
-php artisan vendor:publish --provider="Dibakar\\LaravelDynamicFilters\\DynamicFiltersServiceProvider" --tag="config"
+php artisan vendor:publish --provider="Dibakar\LaravelDynamicFilters\DynamicFiltersServiceProvider" --tag="config"
 ```
+
+This will create a `dynamic-filters.php` file in your `config` directory.
+
+### Service Provider
+
+The package will automatically register its service provider using Laravel's package discovery.
 
 ## Basic Usage
 
-Add the `HasDynamicFilter` trait to your model:
+### Model Setup
+
+Add the `HasDynamicFilter` trait to your model and define filterable/searchable fields:
 
 ```php
 use Dibakar\LaravelDynamicFilters\Traits\HasDynamicFilter;
@@ -49,18 +66,128 @@ class Post extends Model
 {
     use HasDynamicFilter;
     
+    /**
+     * Fields that can be filtered
+     */
     protected $filterable = [
         'title',
         'status',
         'created_at',
         'category_id',
+        'views',
+        'is_featured',
     ];
     
+    /**
+     * Fields that can be searched
+     */
     protected $searchable = [
         'title',
         'content',
+        'author.name', // Supports relationship searching
+    ];
+    
+    /**
+     * Default sorting
+     */
+    protected $sortable = [
+        'created_at' => 'desc',
+        'title' => 'asc',
     ];
 }
+```
+
+### Basic Filtering
+
+```php
+// In your controller
+public function index(Request $request)
+{
+    $posts = Post::filter($request->all())->get();
+    return response()->json($posts);
+}
+```
+
+### Basic Search
+
+```php
+// Search in searchable fields
+$posts = Post::search('search term')->get();
+
+// Or with specific fields
+$posts = Post::search('search term', ['title', 'content'])->get();
+```
+
+## Configuration
+
+### Security Settings
+
+```php
+'security' => [
+    // Maximum number of filters allowed in a single request
+    'max_filters' => 50,
+    
+    // Maximum depth for nested relationships
+    'max_nesting_level' => 5,
+    
+    // Log filter queries (for debugging and auditing)
+    'log_queries' => env('DYNAMIC_FILTERS_LOG_QUERIES', false),
+],
+```
+
+### Operators
+
+```php
+'operators' => [
+    'eq'           => '=',
+    'neq'          => '!=',
+    'gt'           => '>',
+    'gte'          => '>=',
+    'lt'           => '<',
+    'lte'          => '<=',
+    'like'         => 'like',
+    'not_like'     => 'not like',
+    'ilike'        => 'ilike',
+    'not_ilike'    => 'not ilike',
+    'starts_with'  => 'like',
+    'ends_with'    => 'like',
+    'contains'     => 'like',
+    'in'           => 'in',
+    'not_in'       => 'not in',
+    'between'      => 'between',
+    'not_between'  => 'not between',
+    'null'         => 'null',
+    'not_null'     => 'not null',
+    'date'         => 'date',
+    'year'         => 'year',
+    'month'        => 'month',
+    'day'          => 'day',
+    'time'         => 'time',
+],
+```
+
+### Search Configuration
+
+```php
+'search' => [
+    // The request parameter name for search terms
+    'param' => 'search',
+    
+    // Maximum search term length
+    'max_length' => 255,
+    
+    // Minimum search term length
+    'min_length' => 2,
+    
+    // Enable fuzzy search
+    'fuzzy' => false,
+    
+    // Search mode: 'and' or 'or'
+    'mode' => 'or',
+    
+    // Case sensitive search
+    'case_sensitive' => false,
+],
 ```
 
 ## Facade Methods
@@ -73,9 +200,26 @@ Applies filters to an Eloquent query.
 ```php
 use Dibakar\LaravelDynamicFilters\Facades\DynamicFilter;
 
-$filtered = DynamicFilter::apply(Post::query(), [
+// Basic equality filter
+$posts = DynamicFilter::filter(Post::query(), [
     'status' => 'published',
-    'views' => ['gt' => 100]
+])->get();
+
+// Using operators
+$posts = DynamicFilter::filter(Post::query(), [
+    'views' => ['gt' => 100],
+    'created_at' => [
+        'gte' => '2023-01-01',
+        'lte' => '2023-12-31'
+    ]
+])->get();
+
+// Multiple conditions with OR
+$posts = DynamicFilter::filter(Post::query(), [
+    'or' => [
+        ['status' => 'published'],
+        ['is_featured' => true]
+    ]
 ])->get();
 ```
 
@@ -92,12 +236,76 @@ $parser = DynamicFilter::getParser();
 Performs a search on the query.
 
 ```php
-$results = DynamicFilter::search(Post::query(), 'search term', ['title', 'content'])->get();
+// Basic search
+$results = DynamicFilter::search(Post::query(), 'search term')->get();
+
+// Search with specific fields
+$results = DynamicFilter::search(
+    Post::query(), 
+    'search term', 
+    ['title', 'content', 'author.name'],
+    'and' // 'and' or 'or' mode
+)->get();
+```
+
+#### `validateSearchTerm(string $term): array`
+Validates a search term against configured rules.
+
+```php
+$validation = DynamicFilter::validateSearchTerm('test');
+if (!$validation['valid']) {
+    return response()->json(['error' => $validation['message']], 400);
+}
+```
+
+### Sorting Methods
+
+#### `sort(Builder $query, string|array|null $sortParams = null, array $allowedColumns = []): Builder`
+Applies sorting to the query. Supports multiple sort formats for flexibility.
+
+```php
+// Basic usage
+$posts = DynamicFilter::sort(Post::query(), 'title,desc')->get();
+
+// Alternative format with prefix
+$posts = DynamicFilter::sort(Post::query(), '-created_at')->get();
+
+// Multiple sort fields
+$posts = DynamicFilter::sort(Post::query(), [
+    'created_at,desc',
+    'title,asc'
+])->get();
+
+// With allowed columns for security
+$posts = DynamicFilter::sort(
+    Post::query(), 
+    $request->input('sort'), 
+    ['created_at', 'title', 'views', 'author.name']
+)->get();
+```
+
+### Configuration Methods
+
+#### `getConfig(string $key, $default = null)`
+Gets a configuration value.
+
+```php
+$minTermLength = DynamicFilter::getConfig('search.min_term_length', 2);
+```
+
+#### `setConfig(string $key, $value): void`
+Sets a configuration value at runtime.
+
+```php
+DynamicFilter::setConfig('search.case_sensitive', true);
 ```
 
 #### `getSearchConfig(): array`
 Gets the current search configuration.
 
+```php
+$config = DynamicFilter::getSearchConfig();
+```
 ```php
 $config = DynamicFilter::getSearchConfig();
 ```
@@ -228,11 +436,249 @@ $presets = DynamicFilter::getFilterPresets();
 ```
 
 #### `getConfig(string $key, mixed $default = null): mixed`
-Gets a configuration value.
+## Filter Types
+
+### Basic Filtering
+
+Basic filtering allows you to filter records by exact matches on model attributes.
 
 ```php
-$value = DynamicFilter::getConfig('search.min_term_length', 2);
+// URL: /api/posts?status=published&category_id=5
+
+$posts = Post::filter([
+    'status' => 'published',
+    'category_id' => 5,
+])->get();
 ```
+
+### Using Operators
+
+You can use various operators for more complex filtering:
+
+```php
+$posts = Post::filter([
+    'views' => ['gt' => 100],                // Greater than 100
+    'created_at' => [
+        'gte' => '2023-01-01',               // On or after Jan 1, 2023
+        'lte' => '2023-12-31'                // On or before Dec 31, 2023
+    ],
+    'title' => [
+        'like' => '%Laravel%'                // Title contains 'Laravel'
+    ],
+    'status' => ['in' => ['published', 'draft']], // Status is either published or draft
+    'deleted_at' => ['null' => true]         // Only non-deleted records
+])->get();
+```
+
+### Search
+
+Full-text search across multiple fields:
+
+```php
+// Search in all searchable fields
+$posts = Post::search('Laravel')->get();
+
+// Search in specific fields
+$posts = Post::search('Laravel', ['title', 'content'])->get();
+
+// Search with AND condition (all terms must match)
+$posts = Post::search('Laravel 9', [], 'and')->get();
+```
+
+### Sorting
+
+Sort results by one or more fields using a simple, intuitive syntax:
+
+```php
+// Basic sorting
+$posts = Post::sort('title,asc')->get();
+
+// Alternative format with prefix
+$posts = Post::sort('-created_at')->get(); // Same as 'created_at,desc'
+
+// Multiple sort fields
+$posts = Post::sort('views,desc,title,asc')->get();
+
+// Using query parameters with default
+$sort = $request->input('sort', 'created_at,desc');
+$posts = Post::sort($sort)->get();
+
+// Multiple sort parameters in URL
+// GET /posts?sort=views,desc&sort=title,asc
+$posts = Post::sort($request->sort)->get();
+```
+
+## Custom Filters
+
+### Creating Custom Filters
+
+Create a custom filter class:
+
+```php
+namespace App\Filters;
+
+use Dibakar\LaravelDynamicFilters\Services\BaseFilter;
+use Illuminate\Database\Eloquent\Builder;
+
+class PublishedLastDaysFilter extends BaseFilter
+{
+    public function apply(Builder $query, $value): Builder
+    {
+        return $query->where('published_at', '>=', now()->subDays($value));
+    }
+}
+```
+
+### Registering Custom Filters
+
+Register your custom filters in the configuration:
+
+```php
+// config/dynamic-filters.php
+
+'custom_filters' => [
+    'published_last_days' => \App\Filters\PublishedLastDaysFilter::class,
+],
+```
+
+Use the custom filter:
+
+```php
+// URL: /api/posts?published_last_days=7
+
+$posts = Post::filter([
+    'published_last_days' => 7, // Posts published in the last 7 days
+])->get();
+```
+
+## Advanced Usage
+
+### Relationship Filtering
+
+Filter based on related models:
+
+```php
+// URL: /api/posts?author.name=John&category.slug=laravel
+
+$posts = Post::filter([
+    'author.name' => 'John',
+    'category.slug' => 'laravel',
+])->get();
+```
+
+### Filter Presets
+
+Define reusable filter presets in your model:
+
+```php
+class Post extends Model
+{
+    use HasDynamicFilter;
+    
+    protected $filterPresets = [
+        'popular' => [
+            'views' => ['gt' => 1000],
+            'is_featured' => true,
+        ],
+        'recent' => [
+            'created_at' => ['gte' => now()->subWeek()],
+        ],
+    ];
+}
+
+// Usage
+$popularPosts = Post::filter('popular')->get();
+```
+
+### Pagination
+
+```php
+// With default pagination
+$posts = Post::filter($request->all())->paginate(15);
+
+// With custom page parameter
+$posts = Post::filter($request->all())
+    ->paginate(
+        $request->input('per_page', 15),
+        ['*'],
+        'page',
+        $request->input('page', 1)
+    );
+```
+
+### Security
+
+#### Whitelisting Filterable Fields
+
+```php
+class Post extends Model
+{
+    use HasDynamicFilter;
+    
+    // Only these fields can be filtered
+    protected $filterable = [
+        'title',
+        'status',
+        'created_at',
+        'category_id',
+    ];
+    
+    // Only these fields can be searched
+    protected $searchable = [
+        'title',
+        'content',
+        'author.name',
+    ];
+    
+    // Only these fields can be used for sorting
+    protected $sortable = [
+        'created_at',
+        'title',
+        'views',
+    ];
+}
+```
+
+## Error Handling
+
+The package throws specific exceptions that you can catch and handle:
+
+```php
+use Dibakar\LaravelDynamicFilters\Exceptions\FilterException;
+
+try {
+    $posts = Post::filter($request->all())->get();
+} catch (FilterException $e) {
+    return response()->json([
+        'error' => $e->getMessage(),
+        'context' => $e->getContext(),
+    ], 400);
+}
+```
+
+## Performance Tips
+
+1. **Index Your Columns**: Ensure columns used in filtering and sorting are indexed.
+
+2. **Use `select()` Wisely**: Only select the columns you need.
+   ```php
+   $posts = Post::filter($filters)
+       ->select('id', 'title', 'created_at')
+       ->with('author:id,name')
+       ->get();
+   ```
+
+3. **Eager Load Relationships**: Use `with()` to avoid N+1 query problems.
+   ```php
+   $posts = Post::filter($filters)
+       ->with(['author', 'category'])
+       ->get();
+   ```
+
+4. **Limit Result Size**: Always use pagination or limit for large datasets.
+   ```php
+   $posts = Post::filter($filters)->paginate(15);
+   ```
 
 #### `setConfig(string $key, mixed $value): void`
 Sets a configuration value.
@@ -277,50 +723,60 @@ $posts = Post::search(request('search'))->get();
 
 ### Sorting
 
-### Basic Sorting
+Sorting allows you to order your query results by one or more fields in ascending or descending order. The package supports multiple formats for maximum flexibility.
+
+#### Basic Usage
 
 ```php
-// Sort by title in ascending order
-// GET /posts?sort=title
-$posts = Post::sort(request('sort'))->get();
+// Basic ascending sort
+$posts = Post::sort('title')->get();
+// or explicitly
+$posts = Post::sort('title,asc')->get();
 
-// Sort by created_at in descending order (note the minus sign)
-// GET /posts?sort=-created_at
+// Descending sort (two equivalent ways)
+$posts = Post::sort('created_at,desc')->get();
+$posts = Post::sort('-created_at')->get();
 
 // Multiple sort criteria
-// GET /posts?sort=category_id,-created_at,title
+$posts = Post::sort('category,asc,created_at,desc')->get();
+// or as an array
+$posts = Post::sort([
+    'category' => 'asc',
+    'created_at' => 'desc'
+])->get();
 ```
 
-### Sorting with Filtering
+#### Sorting with Relationships
+
+Sort by related model fields using dot notation:
 
 ```php
-// Combine with filtering
-$posts = Post::query()
-    ->filter([
-        'status' => 'published',
-        'created_at' => ['gt' => '2023-01-01']
-    ])
-    ->sort(request('sort', '-created_at'))
-    ->paginate(15);
+// Sort by author's name and then by post date
+$posts = Post::with('author')
+    ->sort('author.name,asc,-created_at')
+    ->get();
 ```
 
-### Sorting in Relationships
+#### Using in Controllers
 
 ```php
-// Sort by related model fields
-// GET /posts?sort=user.name,-created_at
+public function index(Request $request)
+{
+    $validated = $request->validate([
+        'sort' => 'sometimes|string',
+        'per_page' => 'sometimes|integer|min:1|max:100'
+    ]);
 
-// In your controller:
-$posts = Post::with(['user' => function($query) {
-    $query->select('id', 'name');
-}])
-->sort(request('sort'))
-->get();
+    return Post::with('author')
+        ->filter($request->except(['sort', 'page', 'per_page']))
+        ->sort($validated['sort'] ?? 'created_at,desc')
+        ->paginate($validated['per_page'] ?? 15);
+}
 ```
 
-### Configuring Sortable Fields
+#### Configuring Sortable Fields
 
-Define sortable fields in your model:
+For security, you can define which fields are sortable in your model:
 
 ```php
 class Post extends Model
@@ -331,58 +787,64 @@ class Post extends Model
         'title',
         'created_at',
         'views',
-        'user.name', // Relationship sorting
+        'author.name', // Sort by relationship
     ];
+    
+    // Optional: Set default sort
+    protected $defaultSort = 'created_at,desc';
 }
 ```
 
-### Error Handling
+#### Error Handling
 
-When sorting fails, a `FilterException` will be thrown with details:
+Handle invalid sort fields gracefully:
 
 ```php
 try {
-    $posts = Post::sort('invalid_field')->get();
+    $posts = Post::sort($request->sort)->get();
 } catch (\Dibakar\LaravelDynamicFilters\Exceptions\FilterException $e) {
-    // Error: Field 'invalid_field' is not sortable
-    return response()->json(['error' => $e->getMessage()], 400);
+    return response()->json([
+        'error' => 'Invalid sort parameter',
+        'details' => $e->getMessage()
+    ], 400);
 }
 ```
 
-### Available Sort Methods
+#### Available Sort Methods
 
-#### `sort(string|array|null $sortParams, array $allowedColumns = []): Builder`
+##### `sort(string|array $sortParams, array $allowedColumns = []): Builder`
 Applies sorting to the query.
 
 ```php
-// Simple sort
-$query->sort('name');
+// Basic usage
+Post::sort('title,asc');
 
-// Multiple sort fields
-$query->sort('category,-created_at');
-
-// Array format
-$query->sort(['category' => 'asc', 'created_at' => 'desc']);
-
-// With allowed columns whitelist
-$query->sort(request('sort'), ['title', 'created_at', 'views']);
+// With allowed columns for security
+Post::sort($request->sort, ['title', 'created_at', 'author.name']);
 ```
 
-#### `getSortConfig(): array`
-Gets the current sort configuration.
+##### `getSortConfig(): array`
+Get current sort configuration:
 
 ```php
 $config = DynamicFilter::getSortConfig();
+/* Returns:
+[
+    'default_direction' => 'asc',
+    'parameter_name' => 'sort',
+    'ignore_case' => true,
+]
+*/
 ```
 
-#### `setSortConfig(array $config): void`
-Updates the sort configuration.
+##### `setSortConfig(array $config): void`
+Update sort configuration:
 
 ```php
 DynamicFilter::setSortConfig([
     'default_direction' => 'desc',
     'parameter_name' => 'order_by',
-    'ignore_case' => true,
+    'ignore_case' => false,
 ]);
 ```
 
@@ -776,7 +1238,6 @@ $presets = [
     // ... other presets
 ];
 ```
-
 ### 4. Monitoring and Logging
 
 ```php
@@ -790,42 +1251,6 @@ DB::listen(function ($query) {
         ]);
     }
 });
-```
-
-## Testing Your Filters
-
-### 1. Unit Testing Filter Classes
-
-```php
-/** @test */
-public function it_filters_posts_by_status()
-{
-    $published = Post::factory()->create(['status' => 'published']);
-    $draft = Post::factory()->create(['status' => 'draft']);
-
-    $results = Post::filter(['status' => 'published'])->get();
-
-    $this->assertCount(1, $results);
-    $this->assertTrue($results->contains('id', $published->id));
-    $this->assertFalse($results->contains('id', $draft->id));
-}
-```
-
-### 2. Feature Testing API Endpoints
-
-```php
-/** @test */
-public function it_filters_posts_via_api()
-{
-    $post = Post::factory()->create(['status' => 'published']);
-    Post::factory()->create(['status' => 'draft']);
-
-    $response = $this->getJson('/api/posts?status=published');
-
-    $response->assertStatus(200)
-        ->assertJsonCount(1, 'data')
-        ->assertJsonFragment(['id' => $post->id]);
-}
 ```
 
 1. Add database indexes on frequently filtered columns

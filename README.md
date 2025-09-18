@@ -5,26 +5,28 @@
 [![License](https://img.shields.io/github/license/dibakar/laravel-dynamic-filters?style=flat-square)](https://github.com/dibakar/laravel-dynamic-filters)
 [![PHP Version](https://img.shields.io/packagist/php-v/dibakar/laravel-dynamic-filters?style=flat-square)](https://php.net/)
 [![Laravel Version](https://img.shields.io/badge/Laravel-10.x+-orange?style=flat-square)](https://laravel.com/)
+[![Tests](https://github.com/dibakar/laravel-dynamic-filters/actions/workflows/run-tests.yml/badge.svg)](https://github.com/dibakar/laravel-dynamic-filters/actions)
+[![Code Coverage](https://codecov.io/gh/dibakar/laravel-dynamic-filters/branch/main/graph/badge.svg)](https://codecov.io/gh/dibakar/laravel-dynamic-filters)
 
-A flexible and powerful filtering system for Laravel Eloquent models. This package allows you to easily add dynamic filtering, searching, and sorting to your Laravel applications with minimal configuration.
+A robust and flexible filtering system for Laravel Eloquent models that makes building complex, dynamic queries a breeze. This package provides an elegant, fluent API for filtering, searching, and sorting your Eloquent models with minimal configuration.
 
 ## ✨ Features
 
-- **Intuitive API**: Simple and expressive syntax for complex filtering needs
-- **Dynamic Filtering**: Filter models using query parameters with support for complex conditions
-- **Advanced Search**: Full-text search with term normalization and blacklisting
+- **Expressive Filtering**: Chainable methods and intuitive syntax for complex queries
+- **Advanced Search**: Full-text search with fuzzy matching and term normalization
 - **Relationship Support**: Filter across model relationships with nested conditions
-- **Type Safety**: Strict type checking and value casting with proper validation
+- **Type Safety**: Strict type checking and automatic value casting
 - **Performance Optimized**: Efficient query building with minimal overhead
-- **Extensible**: Easy to extend with custom filters and search logic
+- **Security First**: Whitelisting and input validation out of the box
+- **Extensible**: Easy to create and register custom filters
 - **Modern PHP**: Built with PHP 8.1+ features and type hints
-- **Laravel Integration**: Seamless integration with Laravel's Eloquent ORM
 
 ## 🚀 Installation
 
 ### Requirements
 - PHP 8.1 or higher
 - Laravel 10.x or later
+- Composer
 
 ### Install via Composer
 
@@ -32,19 +34,19 @@ A flexible and powerful filtering system for Laravel Eloquent models. This packa
 composer require dibakar/laravel-dynamic-filters
 ```
 
-### Configuration
+### Configuration (Optional)
 
-Publish the configuration file (optional but recommended):
+Publish the configuration file to customize the package behavior:
 
 ```bash
-php artisan vendor:publish --tag=dynamic-filters-config
+php artisan vendor:publish --provider="Dibakar\LaravelDynamicFilters\DynamicFiltersServiceProvider" --tag="config"
 ```
 
-This will create a `dynamic-filters.php` file in your `config` directory where you can customize the package behavior.
+This will create a `dynamic-filters.php` file in your `config` directory with sensible defaults.
 
-### Service Provider
+### Service Provider & Facade
 
-For Laravel versions that don't support package auto-discovery, register the service provider in `config/app.php`:
+The package uses Laravel's package auto-discovery, but you can manually register it in `config/app.php` if needed:
 
 ```php
 'providers' => [
@@ -66,11 +68,11 @@ For Laravel versions that don't support package auto-discovery, register the ser
 | 11.x    | 8.2+    | ^1.0    |
 | 10.x    | 8.1+    | ^1.0    |
 
-## 🛠 Basic Usage
+## 🚀 Quick Start
 
-### 1. Setting Up Your Model
+### 1. Prepare Your Model
 
-Add the `HasDynamicFilter` trait to your Eloquent model and define the filterable and searchable fields:
+Add the `HasDynamicFilter` trait to your Eloquent model and define the filterable, searchable, and sortable fields:
 
 ```php
 use Dibakar\LaravelDynamicFilters\Traits\HasDynamicFilter;
@@ -81,23 +83,50 @@ class Post extends Model
     use HasDynamicFilter;
     
     /**
-     * The attributes that are searchable.
-     *
-     * @var array
+     * Fields that can be searched.
      */
     protected $searchable = [
         'title', 
-        'content', 
-        'author.name',  // Search in relationships
-        'tags.name'     // Search in many-to-many relationships
+        'content',
+        'author.name',    // Search in relationships
+        'tags.name'       // Search in many-to-many relationships
     ];
     
     /**
-     * The attributes that are filterable.
-     *
-     * @var array
+     * Fields that can be filtered with operators.
      */
     protected $filterable = [
+        'id',
+        'status',
+        'category_id',
+        'published_at',
+        'views',
+        'is_featured',
+    ];
+    
+    /**
+     * Fields that can be used for sorting.
+     */
+    protected $sortable = [
+        'created_at' => 'desc',  // Default sort
+        'title' => 'asc',
+        'views' => 'desc',
+    ];
+    
+    /**
+     * Default filter presets.
+     */
+    protected $filterPresets = [
+        'published' => [
+            'status' => 'published',
+            'sort' => '-published_at',
+        ],
+        'popular' => [
+            'views' => ['gt' => 1000],
+            'is_featured' => true,
+            'sort' => '-views',
+        ],
+    ];
         'status',                   // Simple filter: ?status=published
         'category_id',              // Exact match: ?category_id=5
         'created_at' => [           // Date filtering
@@ -161,15 +190,65 @@ public function search(Request $request)
 
 ### 4. Sorting Results
 
-Sort your results using the `sort` parameter:
+Sort your results using the `sort` parameter in your requests. The `-` prefix indicates descending order.
 
-```
-# Sort by most recent first, then by title (ascending)
-GET /posts?sort=-created_at,title
+#### Basic Sorting
 
-# Sort by views (descending)
-GET /posts?sort=-views
+```php
+// In your controller
+$posts = Post::sort($request->input('sort'))->get();
+
+// Or chain it with filters
+$posts = Post::filter($filters)
+    ->sort($request->input('sort', 'created_at,desc'))
+    ->paginate(15);
+
+// Example requests:
+// GET /posts?sort=title             // Sort by title (ascending)
+// GET /posts?sort=title,asc         // Same as above (explicit ascending)
+// GET /posts?sort=title,desc        // Sort by title (descending)
+// GET /posts?sort=-title            // Alternative: Sort by title (descending)
+// GET /posts?sort=views,desc&sort=title,asc  // Multiple sort fields
+// GET /posts?sort=created_at,desc   // Sort by created_at (newest first)
+// GET /posts?sort=author.name,asc   // Sort by relationship field
 ```
+
+#### Default Sorting
+
+Define default sorting in your model:
+
+```php
+// In your model
+protected $sortable = [
+    'created_at' => 'desc',  // Default sort
+    'title' => 'asc',
+    'views' => 'desc',
+    'author.name' => 'asc',  // Sort by relationship
+];
+```
+
+#### Sorting in API Requests
+
+```php
+// In your controller
+public function index(Request $request)
+{
+    $validated = $request->validate([
+        'sort' => 'sometimes|string',
+        // other validation rules
+    ]);
+
+    return Post::filter($request->except('sort'))
+        ->sort($validated['sort'] ?? null)
+        ->paginate($request->per_page ?? 15);
+}
+```
+
+#### Available Sort Options
+
+- `field` - Sort ascending
+- `-field` - Sort descending
+- `relation.field` - Sort by relationship field
 
 ### 5. Pagination
 
@@ -416,6 +495,32 @@ $posts = Post::select([
     ->filter($filters)
     ->paginate(15);
 ```
+
+### Performance Tips
+
+1. **Index Your Database**: Add indexes to columns used in filtering, searching, and sorting to improve query performance.
+
+2. **Use Select Wisely**: Only select the columns you need to reduce memory usage.
+   ```php
+   $posts = Post::filter($filters)
+       ->select('id', 'title', 'created_at')
+       ->with('author:id,name')
+       ->get();
+   ```
+
+3. **Eager Load Relationships**: Use `with()` to avoid N+1 query problems.
+   ```php
+   $posts = Post::filter($filters)
+       ->with(['author', 'category'])
+       ->get();
+   ```
+
+4. **Limit Result Size**: Always use pagination or limit for large datasets to improve performance.
+   ```php
+   $posts = Post::filter($filters)->paginate(15);
+   ```
+
+5. **Consider Caching**: For expensive queries, consider implementing caching at the application level using Laravel's caching system.
 
 ### 6. Error Handling
 
