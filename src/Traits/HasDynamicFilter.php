@@ -24,6 +24,17 @@ trait HasDynamicFilter
         return app('dynamic-filters.search')->apply($query, $term, $this->searchable ?? []);
     }
 
+    public function scopeSort(Builder $query, string|array|null $sort = null): Builder
+    {
+        if (empty($sort)) {
+            return $query;
+        }
+
+        $sortParams = is_string($sort) ? explode(';', $sort) : (array) $sort;
+        
+        return app('dynamic-filters.sort')->apply($query, $sortParams, $this->sortable ?? []);
+    }
+
     public function getFilterable(): array
     {
         if (method_exists($this, 'filterable')) {
@@ -36,5 +47,10 @@ trait HasDynamicFilter
     public function getSearchable(): array
     {
         return $this->searchable ?? [];
+    }
+
+    public function getSortable(): array
+    {
+        return $this->sortable ?? [];
     }
 }

@@ -126,13 +126,52 @@ Gets the list of blacklisted search terms.
 $blacklist = DynamicFilter::getBlacklistedTerms();
 ```
 
+#### `validateSearchTerm(string $term): array`
+Validates a search term and returns detailed validation results.
+
+```php
+$result = DynamicFilter::validateSearchTerm('search term');
+if ($result['valid']) {
+    // Process search
+} else {
+    // Show error message: $result['message']
+}
+
+// Example response:
+// [
+//     'valid' => true,
+//     'message' => 'Search term is valid.'
+// ]
+```
+
 #### `isSearchTermValid(string $term): bool`
-Checks if a search term is valid.
+Checks if a search term is valid (legacy method).
+
+> **Deprecated**: Use `validateSearchTerm()` for detailed validation messages.
 
 ```php
 if (DynamicFilter::isSearchTermValid('valid term')) {
     // Process search
 }
+```
+
+### Error Handling Methods
+
+#### `getLastError(): ?array`
+Gets the last error that occurred during filter operations.
+
+```php
+$error = DynamicFilter::getLastError();
+if ($error) {
+    // Handle error
+}
+```
+
+#### `clearLastError(): void`
+Clears the last recorded error.
+
+```php
+DynamicFilter::clearLastError();
 ```
 
 ### Configuration Methods
@@ -213,21 +252,20 @@ $posts = Post::filter(request()->query())->get();
 
 ### Operators
 
-| Operator | Description           | Example                      |
-|----------|-----------------------|------------------------------|
-| =        | Equals                | `?status=active`             |
-| !=       | Not equals            | `?status[neq]=inactive`      |
-| >        | Greater than          | `?views[gt]=100`             |
-| >=       | Greater than or equal | `?rating[gte]=4`             |
-| <        | Less than             | `?price[lt]=100`             |
-| <=       | Less than or equal    | `?age[lte]=30`               |
-| like     | Like (case-sensitive) | `?name[like]=%john%`         |
-| ilike    | Like (case-insensitive)| `?email[ilike]=%gmail.com`   |
-| in       | In array              | `?status[in]=active,pending` |
-| not_in   | Not in array          | `?id[not_in]=1,2,3`          |
-| between  | Between values        | `?created_at[between]=2023-01-01,2023-12-31` |
-| null     | Is null               | `?deleted_at[null]`          |
-| notnull  | Is not null           | `?updated_at[notnull]`       |
+| Operator   | Description                      | Example                      | Error Handling                                                                 |
+|------------|----------------------------------|------------------------------|-------------------------------------------------------------------------------|
+| `=`        | Equals                           | `?status=active`             | Validates value type matches database column type                             |
+| `!=`       | Not equals                       | `?status[neq]=archived`      | Validates value type matches database column type                             |
+| `>`        | Greater than                     | `?price[gt]=100`             | Validates numeric value                                                       |
+| `>=`       | Greater than or equal            | `?age[gte]=18`               | Validates numeric value                                                       |
+| `<`        | Less than                        | `?price[lt]=100`             | Validates numeric value                                                       |
+| `<=`       | Less than or equal               | `?age[lte]=30`               | Validates numeric value                                                       |
+| `like`     | Case-sensitive pattern matching   | `?name[like]=%john%`         | Validates string value, escapes special characters                           |
+| `ilike`    | Case-insensitive pattern matching | `?email[ilike]=%gmail.com`   | Validates string value, escapes special characters                           |
+| `in`       | Value in array                    | `?status[in]=active,pending` | Validates array values, checks against allowed values if defined             |
+| `between`  | Value between range               | `?age[between]=18,30`        | Validates exactly 2 values, checks min <= max                                |
+| `null`     | Field is NULL                     | `?deleted_at[null]`          | No value needed                                                              |
+| `not_null` | Field is not NULL                 | `?published_at[not_null]`    | No value needed                                                              |
 
 ### Search
 
@@ -239,12 +277,113 @@ $posts = Post::search(request('search'))->get();
 
 ### Sorting
 
+### Basic Sorting
+
 ```php
-// Sort by created_at in descending order
+// Sort by title in ascending order
+// GET /posts?sort=title
+$posts = Post::sort(request('sort'))->get();
+
+// Sort by created_at in descending order (note the minus sign)
 // GET /posts?sort=-created_at
 
+// Multiple sort criteria
+// GET /posts?sort=category_id,-created_at,title
+```
+
+### Sorting with Filtering
+
+```php
+// Combine with filtering
+$posts = Post::query()
+    ->filter([
+        'status' => 'published',
+        'created_at' => ['gt' => '2023-01-01']
+    ])
+    ->sort(request('sort', '-created_at'))
+    ->paginate(15);
+```
+
+### Sorting in Relationships
+
+```php
+// Sort by related model fields
+// GET /posts?sort=user.name,-created_at
+
+// In your controller:
+$posts = Post::with(['user' => function($query) {
+    $query->select('id', 'name');
+}])
+->sort(request('sort'))
+->get();
+```
+
+### Configuring Sortable Fields
+
+Define sortable fields in your model:
+
+```php
+class Post extends Model
+{
+    use HasDynamicFilter;
+    
+    protected $sortable = [
+        'title',
+        'created_at',
+        'views',
+        'user.name', // Relationship sorting
+    ];
+}
+```
+
+### Error Handling
+
+When sorting fails, a `FilterException` will be thrown with details:
+
+```php
+try {
+    $posts = Post::sort('invalid_field')->get();
+} catch (\Dibakar\LaravelDynamicFilters\Exceptions\FilterException $e) {
+    // Error: Field 'invalid_field' is not sortable
+    return response()->json(['error' => $e->getMessage()], 400);
+}
+```
+
+### Available Sort Methods
+
+#### `sort(string|array|null $sortParams, array $allowedColumns = []): Builder`
+Applies sorting to the query.
+
+```php
+// Simple sort
+$query->sort('name');
+
 // Multiple sort fields
-// GET /posts?sort=-created_at,title
+$query->sort('category,-created_at');
+
+// Array format
+$query->sort(['category' => 'asc', 'created_at' => 'desc']);
+
+// With allowed columns whitelist
+$query->sort(request('sort'), ['title', 'created_at', 'views']);
+```
+
+#### `getSortConfig(): array`
+Gets the current sort configuration.
+
+```php
+$config = DynamicFilter::getSortConfig();
+```
+
+#### `setSortConfig(array $config): void`
+Updates the sort configuration.
+
+```php
+DynamicFilter::setSortConfig([
+    'default_direction' => 'desc',
+    'parameter_name' => 'order_by',
+    'ignore_case' => true,
+]);
 ```
 
 ## Custom Filters

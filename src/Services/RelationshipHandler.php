@@ -9,116 +9,191 @@ use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 class RelationshipHandler
 {
     protected ConnectionInterface $connection;
+    protected array $config;
 
-    public function __construct(ConnectionInterface $connection)
+    public function __construct(ConnectionInterface $connection, array $config = [])
     {
         $this->connection = $connection;
+        $this->config = $this->mergeDefaultConfig($config);
+    }
+    
+    protected function mergeDefaultConfig(array $config): array
+    {
+        return array_merge([
+            'operators' => [
+                'eq' => '=',
+                'neq' => '!=',
+                'gt' => '>',
+                'gte' => '>=',
+                'lt' => '<',
+                'lte' => '<=',
+                'like' => 'like',
+                'not_like' => 'not like',
+                'in' => 'in',
+                'not_in' => 'not in',
+                'between' => 'between',
+                'not_between' => 'not between',
+                'null' => 'null',
+                'not_null' => 'not null',
+                'date' => 'date',
+                'year' => 'year',
+                'month' => 'month',
+                'day' => 'day',
+                'time' => 'time',
+            ],
+            'global_whitelist' => [],
+        ], $config);
     }
 
-    public function handle(EloquentBuilder $query, string $relation, string $operator, $value, string $boolean = 'and'): void
+    public function handle(EloquentBuilder $query, string $relation, $conditions, string $boolean = 'and'): void
     {
         if (!is_string($relation) || $relation === '') {
             throw new FilterException('Relation name must be a non-empty string');
         }
 
-        if (!method_exists($query->getModel(), $relation)) {
-            throw new FilterException(sprintf('Relationship method %s does not exist on model %s', 
+        $model = $query->getModel();
+        
+        if (!method_exists($model, $relation)) {
+            throw new FilterException(sprintf(
+                'Relationship method %s does not exist on model %s', 
                 $relation, 
-                get_class($query->getModel())
+                get_class($model)
             ));
         }
 
         try {
-            $query->whereHas($relation, function ($query) use ($operator, $value, $boolean) {
-                $this->applyWhereClause($query, $operator, $value, $boolean);
+            $query->whereHas($relation, function ($query) use ($conditions, $relation, $model) {
+                $relationQuery = $model->{$relation}();
+                $related = $relationQuery->getRelated();
+                
+                if (is_array($conditions)) {
+                    foreach ($conditions as $field => $value) {
+                        if (is_array($value)) {
+                            if (array_keys($value) === range(0, count($value) - 1)) {
+                                if (count($value) === 2) {
+                                    $query->where($field, ...$value);
+                                }
+                            } else {
+                                foreach ($value as $operator => $val) {
+                                    $this->applyWhereClause($query, $field, $operator, $val);
+                                }
+                            }
+                        } else {
+                            $query->where($field, '=', $value);
+                        }
+                    }
+                } else {
+                    $query->where($related->getQualifiedKeyName(), '=', $conditions);
+                }
             });
         } catch (\Exception $e) {
             throw new FilterException(sprintf('Failed to apply relationship filter: %s', $e->getMessage()), 0, $e);
         }
     }
 
-    protected function applyWhereClause(EloquentBuilder $query, string $operator, $value, string $boolean = 'and'): void
+    public function applyNestedOrder(EloquentBuilder $query, string $relation, string $column, string $direction = 'asc'): void
+    {
+        try {
+            $direction = strtolower($direction) === 'desc' ? 'desc' : 'asc';
+            
+            $query->with([$relation => function ($query) use ($column, $direction) {
+                $query->orderBy($column, $direction);
+            }]);
+            
+            $relationInstance = $query->getModel()->{$relation}();
+            $foreignKey = $relationInstance->getQualifiedForeignKeyName();
+            $query->orderBy($foreignKey, $direction);
+        } catch (\Exception $e) {
+            throw new FilterException(sprintf('Failed to apply nested ordering: %s', $e->getMessage()), 0, $e);
+        }
+    }
+
+    protected function applyNestedCondition(EloquentBuilder $query, string $field, $conditions, $relatedModel): void
+    {
+        if (is_array($conditions)) {
+            foreach ($conditions as $operator => $value) {
+                $this->applyWhereClause($query, $field, $operator, $value);
+            }
+        } else {
+            $this->applyWhereClause($query, $field, '=', $conditions);
+        }
+    }
+    
+    protected function applyWhereClause(EloquentBuilder $query, string $field, string $operator, $value, string $boolean = 'and'): void
     {
         if (!in_array(strtolower($boolean), ['and', 'or'], true)) {
-            throw new FilterException("Invalid boolean operator: {$boolean}. Must be 'and' or 'or'");
+            throw new FilterException("Invalid boolean operator: {$boolean}");
         }
-
+        
+        $operators = $this->config['operators'] ?? [];
+        $dbOperator = $operators[$operator] ?? $operator;
         $operator = strtolower($operator);
         
-        if (in_array($operator, ['in', 'not in'], true) && is_string($value)) {
-            $value = array_map('trim', explode(',', $value));
-        }
-
-        if ($value === '' && in_array($operator, ['=', '!='])) {
-            $value = null;
+        if (is_string($value) && in_array($operator, ['in', 'not_in', 'not in'], true)) {
+            $value = array_filter(array_map('trim', explode(',', $value)));
+            if (empty($value)) {
+                return;
+            }
         }
 
         try {
             switch ($operator) {
-                case '=':
-                case '!=':
-                case '>':
-                case '>=':
-                case '<':
-                case '<=':
-                    $this->validateValue($value, $operator);
-                    $query->where($this->getQualifiedKeyName($query), $operator, $value, $boolean);
-                    break;
-                    
-                case 'like':
-                case 'not like':
-                case 'ilike':
-                case 'not ilike':
-                    if (!is_string($value)) {
-                        throw new FilterException(sprintf('Operator %s requires a string value', $operator));
-                    }
-                    $query->where($this->getQualifiedKeyName($query), $operator, $value, $boolean);
-                    break;
-                    
                 case 'in':
+                case 'in_array':
                     $this->validateArrayValue($value, $operator);
-                    $query->whereIn($this->getQualifiedKeyName($query), (array) $value, $boolean);
+                    $query->whereIn($field, (array) $value, $boolean);
                     break;
                     
+                case 'not_in':
                 case 'not in':
                     $this->validateArrayValue($value, $operator);
-                    $query->whereNotIn($this->getQualifiedKeyName($query), (array) $value, $boolean);
+                    $query->whereNotIn($field, (array) $value, $boolean);
                     break;
                     
                 case 'between':
                     $this->validateBetweenValue($value, $operator);
-                    $query->whereBetween($this->getQualifiedKeyName($query), $value, $boolean);
+                    $query->whereBetween($field, (array) $value, $boolean);
                     break;
                     
+                case 'not_between':
                 case 'not between':
                     $this->validateBetweenValue($value, $operator);
-                    $query->whereNotBetween($this->getQualifiedKeyName($query), $value, $boolean);
+                    $query->whereNotBetween($field, (array) $value, $boolean);
                     break;
                     
                 case 'null':
-                    $query->whereNull($this->getQualifiedKeyName($query), $boolean);
+                case 'is_null':
+                    $query->whereNull($field, $boolean);
                     break;
                     
+                case 'not_null':
                 case 'not null':
-                    $query->whereNotNull($this->getQualifiedKeyName($query), $boolean);
+                    $query->whereNotNull($field, $boolean);
+                    break;
+                    
+                case 'date':
+                    if (is_string($value)) {
+                        $query->whereDate($field, '=', $value, $boolean);
+                    } elseif (is_array($value)) {
+                        $query->whereDate($field, $value['operator'] ?? '=', $value['value'], $boolean);
+                    }
+                    break;
+                    
+                case 'where':
+                    $query->where($field, ...(array) $value);
                     break;
                     
                 default:
-                    throw new FilterException(sprintf('Unsupported operator: %s', $operator));
+                    $query->where($field, $dbOperator, $value, $boolean);
             }
         } catch (\Exception $e) {
             throw new FilterException(sprintf('Failed to apply where clause: %s', $e->getMessage()), 0, $e);
         }
     }
     
-    protected function getQualifiedKeyName(EloquentBuilder $query): string
-    {
-        return $query->getModel()->getQualifiedKeyName();
-    }
-    
     protected function validateValue($value, string $operator): void
     {
-        if ($value === null && !in_array($operator, ['=', '!='], true)) {
+        if ($value === null && !in_array($operator, ['=', '!=', 'null', 'not_null'], true)) {
             throw new FilterException(sprintf('Operator %s does not accept null values', $operator));
         }
     }

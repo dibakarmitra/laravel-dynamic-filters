@@ -5,6 +5,7 @@ namespace Dibakar\LaravelDynamicFilters;
 use Illuminate\Support\ServiceProvider;
 use Dibakar\LaravelDynamicFilters\Services\FilterParser;
 use Dibakar\LaravelDynamicFilters\Services\SearchHandler;
+use Dibakar\LaravelDynamicFilters\Services\SortHandler;
 use Dibakar\LaravelDynamicFilters\Services\RelationshipHandler;
 use Dibakar\LaravelDynamicFilters\Services\FilterManager;
 
@@ -45,6 +46,12 @@ class DynamicFiltersServiceProvider extends ServiceProvider
             );
         });
 
+        $this->app->singleton('dynamic-filters.sort', function ($app) {
+            return new SortHandler(
+                config('dynamic-filters.sort', [])
+            );
+        });
+
         $this->app->singleton('dynamic-filters.relationships', function ($app) {
             return new RelationshipHandler(
                 $app->make('db.connection')
@@ -55,6 +62,7 @@ class DynamicFiltersServiceProvider extends ServiceProvider
             return new FilterManager(
                 $app->make('dynamic-filters.parser'),
                 $app->make('dynamic-filters.search'),
+                $app->make('dynamic-filters.sort'),
                 $app->make('dynamic-filters.relationships'),
                 config('dynamic-filters', [])
             );
@@ -67,6 +75,7 @@ class DynamicFiltersServiceProvider extends ServiceProvider
             'dynamic-filters',
             'dynamic-filters.parser',
             'dynamic-filters.search',
+            'dynamic-filters.sort',
             'dynamic-filters.relationships',
         ];
     }

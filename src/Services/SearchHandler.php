@@ -16,6 +16,13 @@ class SearchHandler
         'blacklist' => ['the', 'and', 'or', 'a', 'an', 'in', 'on', 'at', 'to', 'for'],
         'mode' => 'or',
         'case_sensitive' => false,
+        'fuzzy_search' => false,
+        'fuzzy_min_length' => 3,
+        'highlight' => [
+            'enabled' => true,
+            'tag' => 'mark',
+            'class' => 'highlight',
+        ],
     ];
     
     protected const DEFAULT_LIKE_OPERATOR = 'like';
@@ -40,6 +47,32 @@ class SearchHandler
         if (isset($config['blacklist']) && !is_array($config['blacklist'])) {
             throw new FilterException('blacklist must be an array');
         }
+        
+        if (isset($config['fuzzy_search']) && !is_bool($config['fuzzy_search'])) {
+            throw new FilterException('fuzzy_search must be a boolean');
+        }
+        
+        if (isset($config['fuzzy_min_length']) && !is_int($config['fuzzy_min_length'])) {
+            throw new FilterException('fuzzy_min_length must be an integer');
+        }
+        
+        if (isset($config['highlight'])) {
+            if (!is_array($config['highlight'])) {
+                throw new FilterException('highlight must be an array');
+            }
+            
+            if (isset($config['highlight']['enabled']) && !is_bool($config['highlight']['enabled'])) {
+                throw new FilterException('highlight.enabled must be a boolean');
+            }
+            
+            if (isset($config['highlight']['tag']) && !is_string($config['highlight']['tag'])) {
+                throw new FilterException('highlight.tag must be a string');
+            }
+            
+            if (isset($config['highlight']['class']) && !is_string($config['highlight']['class'])) {
+                throw new FilterException('highlight.class must be a string');
+            }
+        }
     }
 
     public function apply(Builder $query, string $term, array $searchable = [], ?string $mode = null): Builder
@@ -54,6 +87,10 @@ class SearchHandler
         }
         
         try {
+            if ($this->config['fuzzy_search'] ?? false) {
+                $term = $this->applyFuzzySearch($term);
+            }
+            
             $terms = $this->prepareSearchTerms($term);
             if (empty($terms)) {
                 return $query;
@@ -83,6 +120,56 @@ class SearchHandler
         }
     }
 
+    protected function applyFuzzySearch(string $term): string
+    {
+        $minLength = $this->config['fuzzy_min_length'] ?? 3;
+        
+        return collect(explode(' ', $term))
+            ->map(function ($word) use ($minLength) {
+                if (strlen($word) >= $minLength) {
+                    return "{$word}~";
+                }
+                return $word;
+            })
+            ->implode(' ');
+    }
+
+    public function highlight(string $text, string $searchTerm, array $options = []): string
+    {
+        if (!$this->config['highlight']['enabled'] ?? true) {
+            return $text;
+        }
+        
+        $options = array_merge([
+            'tag' => $this->config['highlight']['tag'] ?? 'mark',
+            'class' => $this->config['highlight']['class'] ?? 'highlight',
+            'min_word_length' => $this->config['min_term_length'] ?? 2,
+        ], $options);
+        
+        $terms = $this->prepareSearchTerms($searchTerm);
+        if (empty($terms)) {
+            return $text;
+        }
+        
+        $terms = array_filter($terms, fn($term) => mb_strlen($term) >= $options['min_word_length']);
+        
+        if (empty($terms)) {
+            return $text;
+        }
+        
+        $pattern = '/(' . implode('|', array_map('preg_quote', $terms)) . ')/i';
+        
+        return preg_replace_callback($pattern, function($matches) use ($options) {
+            return sprintf(
+                '<%s class="%s">%s</%s>',
+                $options['tag'],
+                $options['class'],
+                $matches[0],
+                $options['tag']
+            );
+        }, $text);
+    }
+
     protected function addSearchClause(Builder $query, string $column, string $term, string $boolean = 'and'): void
     {
         if (!preg_match('/^[a-zA-Z0-9_\-\.]+$/', $column)) {
@@ -103,7 +190,7 @@ class SearchHandler
             }
 
             $query->where(
-                $query->getQuery()->getGrammar()->wrap($column),
+                $query->getQuery()->getGrammar()->getValue($column),
                 $likeOperator,
                 $searchTerm,
                 $boolean

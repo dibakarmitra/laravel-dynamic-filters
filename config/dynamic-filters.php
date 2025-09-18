@@ -3,6 +3,25 @@
 return [
     /*
     |--------------------------------------------------------------------------
+    | Security Settings
+    |--------------------------------------------------------------------------
+    |
+    | Security-related configuration options.
+    |
+    */
+    'security' => [
+        // Maximum number of filters allowed in a single request
+        'max_filters' => 50,
+        
+        // Maximum depth for nested relationships
+        'max_nesting_level' => 5,
+        
+        // Log filter queries (for debugging and auditing)
+        'log_queries' => env('DYNAMIC_FILTERS_LOG_QUERIES', false),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Default Operators
     |--------------------------------------------------------------------------
     |
@@ -11,19 +30,30 @@ return [
     |
     */
     'operators' => [
-        'eq'      => '=',
-        'neq'     => '!=',
-        'gt'      => '>',
-        'gte'     => '>=',
-        'lt'      => '<',
-        'lte'     => '<=',
-        'like'    => 'like',
-        'ilike'   => 'ilike', // PostgreSQL case-insensitive like
-        'in'      => 'in',
-        'not_in'  => 'not_in',
-        'between' => 'between',
-        'null'    => 'null',
-        'notnull' => 'notnull',
+        'eq'           => '=',
+        'neq'          => '!=',
+        'gt'           => '>',
+        'gte'          => '>=',
+        'lt'           => '<',
+        'lte'          => '<=',
+        'like'         => 'like',
+        'not_like'     => 'not like',
+        'ilike'        => 'ilike',
+        'not_ilike'    => 'not ilike',
+        'starts_with'  => 'like',
+        'ends_with'    => 'like',
+        'contains'     => 'like',
+        'in'           => 'in',
+        'not_in'       => 'not in',
+        'between'      => 'between',
+        'not_between'  => 'not between',
+        'null'         => 'null',
+        'not_null'     => 'not null',
+        'date'         => 'date',
+        'year'         => 'year',
+        'month'        => 'month',
+        'day'          => 'day',
+        'time'         => 'time',
     ],
 
     /*
@@ -98,6 +128,12 @@ return [
         // The request parameter name for search terms
         'param' => 'search',
         
+        // Maximum search term length
+        'max_length' => 255,
+        
+        // Minimum search term length
+        'min_length' => 1,
+        
         // Search behavior configuration
         'min_term_length' => 2,      // Minimum length of search terms
         'max_terms' => 5,            // Maximum number of search terms to process
@@ -161,6 +197,32 @@ return [
         
         // Full-text search mode (natural, boolean, etc.)
         'fulltext_mode' => 'natural',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Sorting Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure the default sorting behavior for your application.
+    |
+    */
+    'sort' => [
+        // Default sorting field and direction
+        'default_field' => 'created_at',
+        'default_direction' => 'desc',
+        
+        // Whether to allow sorting by any column (false to only allow sorting by whitelisted columns)
+        'allow_any_column' => false,
+        
+        // Default sort parameter name in the request
+        'param' => 'sort',
+        
+        // Direction indicators
+        'direction_indicators' => [
+            '+' => 'asc',
+            '-' => 'desc'
+        ],
     ],
 
     /*
